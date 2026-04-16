@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discussion Battleship - Teacher Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .perspective-1000 { perspective: 1000px; }
+        .card-inner {
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            cursor: pointer;
+        }
+        .is-flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .card-front, .card-back {
+            backface-visibility: hidden;
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            padding: 4px;
+            text-align: center;
+        }
+        .card-back { transform: rotateY(180deg); }
+        .ship-bg { background-color: #dc2626; color: white; border: 2px solid #991b1b; }
+        .water-bg { background-color: #2563eb; color: white; border: 2px solid #1e40af; }
+        .hidden-bg { background-color: #1f2937; color: #9ca3af; border: 2px solid #374151; }
+        .setup-active { border: 2px dashed #f59e0b !important; }
+        
+        .eliminated {
+            opacity: 0.3;
+            pointer-events: none;
+            filter: grayscale(1);
+            transition: all 1s ease;
+        }
+        .eliminated-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.4);
+            z-index: 50;
+            pointer-events: none;
+            border-radius: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 font-sans">
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Instructions Banner -->
+        <div id="setupOverlay" class="mb-6 bg-amber-600 text-white px-6 py-2 rounded shadow-lg font-bold text-center hidden">
+            ⚠️ SETUP MODE ACTIVE: Click any student name below to toggle between WATER and SHIP.
+        </div>
+
+        <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-black tracking-tight text-white italic uppercase">Discussion <span class="text-blue-500">Battleship</span></h1>
+                <p class="text-slate-400 text-sm">Click names to edit. Teams are eliminated when both ships sink.</p>
+            </div>
+            
+            <div class="flex gap-3">
+                <button id="setupBtn" onclick="toggleSetup()" class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded font-bold transition-all shadow-lg flex items-center gap-2">
+                    <span id="setupIcon">⚙️</span> <span id="setupText">Setup Mode</span>
+                </button>
+                <button onclick="resetBoard()" class="px-5 py-2 bg-slate-800 hover:bg-slate-700 rounded font-bold transition-all border border-slate-700">
+                    Reset Game
+                </button>
+            </div>
+        </header>
+
+        <!-- The Board -->
+        <div class="grid grid-cols-3 gap-6 relative">
+            <!-- Column 1 -->
+            <div id="container-0" class="relative">
+                <div id="col-0" class="space-y-4">
+                    <input type="text" value="TEAM 1: ECO-WARRIORS" class="w-full bg-transparent text-center text-xl font-bold text-blue-400 border-b border-transparent hover:border-slate-700 focus:border-blue-500 outline-none p-1">
+                    <div id="status-0" class="text-center text-xs font-mono text-slate-500">SHIPS REMAINING: 0</div>
+                    <div id="cards-0" class="space-y-3"></div>
+                </div>
+            </div>
+            <!-- Column 2 -->
+            <div id="container-1" class="relative">
+                <div id="col-1" class="space-y-4">
+                    <input type="text" value="TEAM 2: INFLUENCERS" class="w-full bg-transparent text-center text-xl font-bold text-pink-400 border-b border-transparent hover:border-slate-700 focus:border-blue-500 outline-none p-1">
+                    <div id="status-1" class="text-center text-xs font-mono text-slate-500">SHIPS REMAINING: 0</div>
+                    <div id="cards-1" class="space-y-3"></div>
+                </div>
+            </div>
+            <!-- Column 3 -->
+            <div id="container-2" class="relative">
+                <div id="col-2" class="space-y-4">
+                    <input type="text" value="TEAM 3: BUDGET USERS" class="w-full bg-transparent text-center text-xl font-bold text-emerald-400 border-b border-transparent hover:border-slate-700 focus:border-blue-500 outline-none p-1">
+                    <div id="status-2" class="text-center text-xs font-mono text-slate-500">SHIPS REMAINING: 0</div>
+                    <div id="cards-2" class="space-y-3"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const rowsCount = 6;
+        let boardState = [
+            Array(6).fill().map(() => ({ type: 'water', name: '', revealed: false })),
+            Array(6).fill().map(() => ({ type: 'water', name: '', revealed: false })),
+            Array(6).fill().map(() => ({ type: 'water', name: '', revealed: false }))
+        ];
+        
+        const defaultNames = ["Alex", "Blake", "Charlie", "Dakota", "Emerson", "Finley"];
+        let isSetupMode = false;
+
+        function initBoard() {
+            for (let c = 0; c < 3; c++) {
+                const container = document.getElementById(`cards-${c}`);
+                container.innerHTML = '';
+                const colContainer = document.getElementById(`container-${c}`);
+                colContainer.querySelectorAll('.eliminated-overlay').forEach(e => e.remove());
+                document.getElementById(`col-${c}`).classList.remove('eliminated');
+                
+                for (let r = 0; r < rowsCount; r++) {
+                    boardState[c][r].name = defaultNames[r];
+                    boardState[c][r].type = 'water';
+                    boardState[c][r].revealed = false;
+                    container.appendChild(createCardUI(c, r));
+                }
+            }
+            updateStatus();
+        }
+
+        function createCardUI(c, r) {
+            const cardId = `card-${c}-${r}`;
+            const wrap = document.createElement('div');
+            wrap.className = 'perspective-1000 h-14 relative w-full';
+            wrap.id = cardId;
+            
+            wrap.innerHTML = `
+                <div class="card-inner relative w-full h-full shadow-md" onclick="handleInteraction(${c}, ${r})">
+                    <div class="card-front hidden-bg flex flex-col items-center justify-center">
+                        <input type="text" value="${boardState[c][r].name}" 
+                            onclick="event.stopPropagation()"
+                            onchange="updateName(${c}, ${r}, this.value)"
+                            class="bg-transparent text-center w-full outline-none text-slate-200 pointer-events-auto">
+                        <span class="text-[10px] text-slate-500 uppercase tracking-tighter">Pos ${r+1}</span>
+                    </div>
+                    <div id="back-${c}-${r}" class="card-back water-bg">
+                        🌊 WATER
+                    </div>
+                </div>
+            `;
+            return wrap;
+        }
+
+        function updateName(c, r, val) {
+            boardState[c][r].name = val;
+        }
+
+        function toggleSetup() {
+            isSetupMode = !isSetupMode;
+            const btn = document.getElementById('setupBtn');
+            const text = document.getElementById('setupText');
+            const icon = document.getElementById('setupIcon');
+            const overlay = document.getElementById('setupOverlay');
+
+            if (isSetupMode) {
+                btn.classList.replace('bg-amber-600', 'bg-green-600');
+                text.innerText = "Save Identities";
+                icon.innerText = "✅";
+                overlay.classList.remove('hidden');
+                document.querySelectorAll('.card-front').forEach(el => el.classList.add('setup-active'));
+            } else {
+                btn.classList.replace('bg-green-600', 'bg-amber-600');
+                text.innerText = "Setup Mode";
+                icon.innerText = "⚙️";
+                overlay.classList.add('hidden');
+                document.querySelectorAll('.card-front').forEach(el => el.classList.remove('setup-active'));
+                closeAllCards();
+                updateStatus();
+            }
+        }
+
+        function handleInteraction(c, r) {
+            const cardEl = document.getElementById(`card-${c}-${r}`);
+            const backEl = document.getElementById(`back-${c}-${r}`);
+            const state = boardState[c][r];
+
+            if (isSetupMode) {
+                if (state.type === 'water') {
+                    state.type = 'ship';
+                    backEl.innerText = "🔥 SHIP SUNK!";
+                    backEl.classList.replace('water-bg', 'ship-bg');
+                } else {
+                    state.type = 'water';
+                    backEl.innerText = "🌊 WATER";
+                    backEl.classList.replace('ship-bg', 'water-bg');
+                }
+                cardEl.classList.add('is-flipped');
+                setTimeout(() => cardEl.classList.remove('is-flipped'), 400);
+            } else {
+                if (!cardEl.classList.contains('is-flipped')) {
+                    cardEl.classList.add('is-flipped');
+                    
+                    if (state.type === 'ship') {
+                        state.revealed = true;
+                        updateStatus();
+                        checkElimination(c);
+                    }
+
+                    setTimeout(() => {
+                        cardEl.classList.remove('is-flipped');
+                    }, 4000);
+                }
+            }
+        }
+
+        function updateStatus() {
+            for (let c = 0; c < 3; c++) {
+                const totalShips = boardState[c].filter(s => s.type === 'ship').length;
+                const revealedShips = boardState[c].filter(s => s.type === 'ship' && s.revealed).length;
+                const remaining = totalShips - revealedShips;
+                document.getElementById(`status-${c}`).innerText = `SHIPS REMAINING: ${remaining}`;
+            }
+        }
+
+        function checkElimination(c) {
+            const totalShips = boardState[c].filter(s => s.type === 'ship').length;
+            const revealedShips = boardState[c].filter(s => s.type === 'ship' && s.revealed).length;
+            
+            if (totalShips > 0 && revealedShips === totalShips) {
+                const col = document.getElementById(`col-${c}`);
+                const container = document.getElementById(`container-${c}`);
+                
+                setTimeout(() => {
+                    col.classList.add('eliminated');
+                    const overlay = document.createElement('div');
+                    overlay.className = 'eliminated-overlay';
+                    overlay.innerHTML = '<span class="text-4xl font-black text-white bg-red-600 px-4 py-2 rotate-[-10deg] shadow-2xl border-4 border-white">ELIMINATED</span>';
+                    container.appendChild(overlay);
+                }, 1000);
+            }
+        }
+
+        function closeAllCards() {
+            document.querySelectorAll('.is-flipped').forEach(el => el.classList.remove('is-flipped'));
+        }
+
+        function resetBoard() {
+            if(confirm("Reset all names and identities?")) {
+                initBoard();
+            }
+        }
+
+        window.onload = initBoard;
+    </script>
+</body>
+</html>
